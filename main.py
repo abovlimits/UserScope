@@ -65,7 +65,7 @@ def sherlock(username, sites, threads=10, timeout=10, output=None):
     print(Fore.BLUE + "[+] Completed, Thank you for using our tool!" + Style.RESET_ALL)
 
 def main():
-    parser = argparse.ArgumentParser(description="Sherlock: Hunt down social media accounts by username")
+    parser = argparse.ArgumentParser(description="UserScope: Hunt down social media accounts by username")
     parser.add_argument("-t", "--threads", type=int, default=10, help="Number of threads to use (default: 10)")
     parser.add_argument("--timeout", type=int, default=10, help="Timeout for requests in seconds (default: 10)")
     parser.add_argument("-o", "--output", help="Output file to save results")
