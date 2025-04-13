@@ -4,10 +4,11 @@ from colorama import Fore, Style
 import argparse
 import concurrent.futures
 import os
+from bs4 import BeautifulSoup
 
 def check_site(username, site, timeout=10):
     """
-    Checks if a username exists on a given site.
+    Checks if a username exists on a given site and retrieves profile information.
 
     Args:
         username (str): The username to search for.
@@ -15,13 +16,118 @@ def check_site(username, site, timeout=10):
         timeout (int): Timeout for the request in seconds.
 
     Returns:
-        str: The URL if the username was found, None otherwise.
+        dict: A dictionary containing the URL, followers, following, and bio if the username was found, None otherwise.
     """
     url = site["url"].format(username)
     try:
         response = requests.get(url, timeout=timeout)
         if response.status_code == 200:
-            return url
+            soup = BeautifulSoup(response.content, 'html.parser')
+            followers, following, bio, pfp_url = None, None, None, None
+
+            if site["name"] == "Instagram":
+                try:
+                    data = soup.find("meta",  property="og:description")
+                    content = data["content"].split('-')
+                    followers = content[0].replace(" Followers, ", "")
+                    following = content[1].replace(" Following, ", "")
+                    bio = content[2]
+                    img = soup.find("meta",  property="og:image")
+                    pfp_url = img["content"] if img else None
+                except:
+                    pass
+            elif site["name"] == "Twitter":
+                try:
+                    followers_element = soup.find("a", {"href": f"https://twitter.com/{username}/followers"})
+                    followers = followers_element.find("span", {"class": "css-901oao css-16my406 r-poiln3 r-bcqeeo r-qvutc0"}).text
+                    following_element = soup.find("a", {"href": f"https://twitter.com/{username}/following"})
+                    following = following_element.find("span", {"class": "css-901oao css-16my406 r-poiln3 r-bcqeeo r-qvutc0"}).text
+                    bio_element = soup.find("div", {"class": "css-901oao r-1nao33i r-37j5jr r-a023e6 r-16dba41 r-rjxpzi r-bcqeeo r-bnwqim r-qvutc0"})
+                    bio = bio_element.text if bio_element else None
+                    img = soup.find("img", {"alt": "Profile picture"})
+                    pfp_url = img["src"] if img else None
+                except:
+                    pass
+            elif site["name"] == "YouTube":
+                try:
+                    # Extracting followers (subscribers)
+                    subscribers_element = soup.find('yt-formatted-string', {'id': 'subscriber-count'})
+                    followers = subscribers_element.text.strip() if subscribers_element else None
+                    
+                    # Extracting bio (description)
+                    description_element = soup.find('meta', {'name': 'description'})
+                    bio = description_element['content'] if description_element else None
+
+                    # Extracting profile picture URL
+                    img_element = soup.find('img', {'id': 'img', 'class': 'style-scope yt-img-shadow'})
+                    pfp_url = img_element['src'] if img_element else None
+                except:
+                    pass
+            elif site["name"] == "Facebook":
+                try:
+                    # Extracting followers (likes)
+                    likes_element = soup.find('div', {'class': '_64-k'})
+                    followers = likes_element.text.replace(' people like this', '') if likes_element else None
+
+                    # Extracting bio (description)
+                    description_element = soup.find('meta', {'name': 'description'})
+                    bio = description_element['content'] if description_element else None
+
+                    # Extracting profile picture URL
+                    img_element = soup.find('img', {'class': 'profilePic img'})
+                    pfp_url = img_element['src'] if img_element else None
+                except:
+                    pass
+            elif site["name"] == "TikTok":
+                try:
+                    # Extracting followers, following, and likes
+                    followers_element = soup.find('strong', {'data-e2e': 'followers-count'})
+                    followers = followers_element.text if followers_element else None
+                    following_element = soup.find('strong', {'data-e2e': 'following-count'})
+                    following = following_element.text if following_element else None
+
+                    # Extracting bio
+                    bio_element = soup.find('h2', {'data-e2e': 'user-bio'})
+                    bio = bio_element.text if bio_element else None
+
+                    # Extracting profile picture URL
+                    img_element = soup.find('img', {'class': 'tiktok-avatar'})
+                    pfp_url = img_element['src'] if img_element else None
+                except:
+                    pass
+            elif site["name"] == "Twitch":
+                try:
+                    # Extracting followers
+                    followers_element = soup.find('p', {'data-a-target': 'followers-count'})
+                    followers = followers_element.text if followers_element else None
+
+                    # Extracting bio
+                    bio_element = soup.find('p', {'class': 'core-section-header-description'})
+                    bio = bio_element.text if bio_element else None
+
+                    # Extracting profile picture URL
+                    img_element = soup.find('img', {'class': 'channel-header__user-avatar'})
+                    pfp_url = img_element['src'] if img_element else None
+                except:
+                    pass
+            elif site["name"] == "Pinterest":
+                try:
+                    # Extracting followers
+                    followers_element = soup.find('div', {'class': 'tBJ dyH iFc sIg zI7 iyn Hsu'})
+                    followers = followers_element.text.replace(' followers', '') if followers_element else None
+
+                    # Extracting bio
+                    bio_element = soup.find('div', {'class': 'Eqh'})
+                    bio = bio_element.text if bio_element else None
+
+                    # Extracting profile picture URL
+                    img_element = soup.find('img', {'class': 'hCL kVc L4E MIw'});
+                    pfp_url = img_element['src'] if img_element else None
+                except:
+                    pass
+            # Add more site-specific logic here to extract followers, following, and bio
+
+            return {"url": url, "followers": followers, "following": following, "bio": bio, "pfp_url": pfp_url}
         else:
             return None
     except requests.exceptions.RequestException as e:
@@ -29,7 +135,8 @@ def check_site(username, site, timeout=10):
 
 def sherlock(username, sites, threads=10, timeout=10, output=None):
     """
-    Searches for a username on multiple social media platforms and prints only the found links.
+    Searches for a username on multiple social media platforms and prints the found links,
+    followers, following, and bio.
 
     Args:
         username (str): The username to search for.
@@ -51,13 +158,29 @@ def sherlock(username, sites, threads=10, timeout=10, output=None):
             result = future.result()
             if result:
                 results.append(result)
-                print(Fore.GREEN + f"[+] Username found: {result}" + Style.RESET_ALL)
+                print(Fore.GREEN + f"[+] Username found: {result['url']}" + Style.RESET_ALL)
+                if result["followers"]:
+                    print(Fore.GREEN + f"    [+] Followers: {result['followers']}" + Style.RESET_ALL)
+                if result["following"]:
+                    print(Fore.GREEN + f"    [+] Following: {result['following']}" + Style.RESET_ALL)
+                if result["bio"]:
+                    print(Fore.GREEN + f"    [+] Bio: {result['bio']}" + Style.RESET_ALL)
+                if result["pfp_url"]:
+                    print(Fore.GREEN + f"    [+] Profile Picture URL: {result['pfp_url']}" + Style.RESET_ALL)
 
     if output:
         try:
             with open(output, "w") as f:
                 for result in results:
-                    f.write(result + "\n")
+                    f.write(f"{result['url']}\n")
+                    if result["followers"]:
+                        f.write(f"    Followers: {result['followers']}\n")
+                    if result["following"]:
+                        f.write(f"    Following: {result['following']}\n")
+                    if result["bio"]:
+                        f.write(f"    Bio: {result['bio']}\n")
+                    if result["pfp_url"]:
+                        f.write(f"    Profile Picture URL: {result['pfp_url']}\n")
             print(Fore.GREEN + f"[+] Results saved to {output}" + Style.RESET_ALL)
         except Exception as e:
             print(Fore.RED + f"[-] Error saving to file: {e}" + Style.RESET_ALL)
@@ -65,7 +188,7 @@ def sherlock(username, sites, threads=10, timeout=10, output=None):
     print(Fore.BLUE + "[+] Completed, Thank you for using our tool!" + Style.RESET_ALL)
 
 def main():
-    parser = argparse.ArgumentParser(description="UserScope: Hunt down social media accounts by username")
+    parser = argparse.ArgumentParser(description="Sherlock: Hunt down social media accounts by username")
     parser.add_argument("-t", "--threads", type=int, default=10, help="Number of threads to use (default: 10)")
     parser.add_argument("--timeout", type=int, default=10, help="Timeout for requests in seconds (default: 10)")
     parser.add_argument("-o", "--output", help="Output file to save results")
@@ -124,14 +247,12 @@ def main():
         {"name": "Patreon", "url": "https://www.patreon.com/{}", "exists": True},
         {"name": "ProductHunt", "url": "https://www.producthunt.com/@{}", "exists": True},
         {"name": "500px", "url": "https://500px.com/p/{}?view=photos", "exists": True},
-        {"name": "About.me", "url": "https://about.me/{}", "exists": True},
         {"name": "Academia.edu", "url": "https://independent.academia.edu/{}", "exists": True},
         {"name": "AllTrails", "url": "https://www.alltrails.com/members/{}", "exists": True},
         {"name": "Anilist", "url": "https://anilist.co/user/{}", "exists": True},
         {"name": "Archive.org", "url": "https://archive.org/details/{}", "exists": True},
         {"name": "AskFM", "url": "https://ask.fm/{}", "exists": True},
         {"name": "BLIP.fm", "url": "https://blip.fm/{}", "exists": True},
-        {"name": "Badoo", "url": "https://badoo.com/en/profile/{}", "exists": True},
         {"name": "Bitwarden", "url": "https://bitwarden.com/help/article/username-availability/#{}", "exists": False},
         {"name": "Bookcrossing", "url": "https://www.bookcrossing.com/mybookshelf/{}", "exists": True},
         {"name": "Buy Me a Coffee", "url": "https://www.buymeacoffee.com/{}", "exists": True},
@@ -148,28 +269,19 @@ def main():
         {"name": "культиватор", "url": "https://cultivator.ee/users/{}", "exists": True},
         {"name": "Dcard", "url": "https://www.dcard.tw/@{}", "exists": True},
         {"name": "Delicious", "url": "https://delicious.com/{}", "exists": True},
-        {"name": "DeviantArt", "url": "https://www.deviantart.com/{}", "exists": True},
         {"name": "Discogs", "url": "https://www.discogs.com/user/{}", "exists": True},
-        {"name": "Dribbble", "url": "https://dribbble.com/{}", "exists": True},
-        {"name": "eBay", "url": "https://www.ebay.com/usr/{}", "exists": True},
         {"name": " এলা", "url": "https://ella.network/{}", "exists": True},
-        {"name": "Etsy", "url": "https://www.etsy.com/shop/{}", "exists": True},
         {"name": "EyeEm", "url": "https://www.eyeem.com/u/{}", "exists": True},
         {"name": "Fandom", "url": "https://www.fandom.com/u/{}", "exists": True},
         {"name": "Filmogs", "url": "https://filmogs.com/@{}", "exists": True},
-        {"name": "Flickr", "url": "https://www.flickr.com/people/{}", "exists": True},
         {"name": "FlightAware", "url": "https://flightaware.com/user/{}", "exists": True},
         {"name": "FontStruct", "url": "https://fontstruct.com/fontstructors/{}", "exists": True},
-        {"name": "Foursquare", "url": "https://foursquare.com/user/{}", "exists": True},
         {"name": "FreeCodeCamp", "url": "https://www.freecodecamp.org/{}", "exists": True},
         {"name": "Freesound", "url": "https://freesound.org/people/{}", "exists": True},
         {"name": "GameSpot", "url": "https://www.gamespot.com/profile/{}", "exists": True},
         {"name": "GitHub", "url": "https://github.com/{}", "exists": True},
-        {"name": "GitLab", "url": "https://gitlab.com/{}", "exists": True},
         {"name": "Gitee", "url": "https://gitee.com/{}", "exists": True},
         {"name": "Goodreads", "url": "https://www.goodreads.com/user/show/{}", "exists": True},
-        {"name": "Gravatar", "url": "https://en.gravatar.com/{}", "exists": True},
-        {"name": "Gumroad", "url": "https://gumroad.com/{}", "exists": True},
         {"name": "Hackaday", "url": "https://hackaday.io/{}", "exists": True},
         {"name": "HackerOne", "url": "https://hackerone.com/{}", "exists": True},
         {"name": "HackerRank", "url": "https://www.hackerrank.com/{}", "exists": True},
@@ -179,23 +291,16 @@ def main():
         {"name": "IFTTT", "url": "https://ifttt.com/p/{}", "exists": True},
         {"name": "ImageShack", "url": "https://imageshack.com/user/{}", "exists": True},
         {"name": "Imgur", "url": "https://imgur.com/user/{}", "exists": True},
-        {"name": "Instagram", "url": "https://www.instagram.com/{}", "exists": True},
-        {"name": "Instructables", "url": "https://www.instructables.com/member/{}", "exists": True},
         {"name": "Issuu", "url": "https://issuu.com/{}", "exists": True},
         {"name": "itch.io", "url": "https://{}.itch.io/", "exists": True},
         {"name": "Joomla", "url": "https://community.joomla.org/user/profile/{}", "exists": True},
         {"name": "Kaggle", "url": "https://www.kaggle.com/{}", "exists": True},
-        {"name": "Keybase", "url": "https://keybase.io/{}", "exists": True},
-        {"name": "Kickstarter", "url": "https://www.kickstarter.com/profile/{}", "exists": True},
         {"name": "Kongregate", "url": "https://www.kongregate.com/accounts/{}", "exists": True},
         {"name": "LORI.ru", "url": "https://lori.ru/portfolio/{}", "exists": True},
         {"name": "Launchpad", "url": "https://launchpad.net/~{}", "exists": True},
         {"name": "LeetCode", "url": "https://leetcode.com/{}", "exists": True},
         {"name": "Letterboxd", "url": "https://letterboxd.com/{}", "exists": True},
-        {"name": "LiveJournal", "url": "https://{}.livejournal.com/", "exists": True},
         {"name": "Mastodon", "url": "https://mastodon.social/@{}", "exists": True},
-        {"name": "Medium", "url": "https://medium.com/@{}", "exists": True},
-        {"name": "Meetup", "url": "https://www.meetup.com/members/{}", "exists": True},
         {"name": "Mixcloud", "url": "https://www.mixcloud.com/{}", "exists": True},
         {"name": "MyAnimeList", "url": "https://myanimelist.net/profile/{}", "exists": True},
         {"name": "Myspace", "url": "https://myspace.com/{}", "exists": True},
@@ -205,13 +310,10 @@ def main():
         {"name": "OK.ru", "url": "https://ok.ru/profile/{}", "exists": True},
         {"name": "OnlyFans", "url": "https://onlyfans.com/{}", "exists": True},
         {"name": "OpenStreetMap", "url": "https://www.openstreetmap.org/user/{}", "exists": True},
-        {"name": "Patreon", "url": "https://www.patreon.com/{}", "exists": True},
         {"name": "Photobucket", "url": "https://photobucket.com/user/{}", "exists": True},
-        {"name": "Pinterest", "url": "https://www.pinterest.com/{}", "exists": True},
         {"name": "Pixabay", "url": "https://pixabay.com/users/{}", "exists": True},
         {"name": "Plug.dj", "url": "https://plug.dj/@/{}", "exists": True},
         {"name": "Product Hunt", "url": "https://www.producthunt.com/@{}", "exists": True},
-        {"name": "Quora", "url": "https://www.quora.com/profile/{}", "exists": True},
         {"name": "Ravelry", "url": "https://www.ravelry.com/people/{}", "exists": True},
         {"name": "ResearchGate", "url": "https://www.researchgate.net/profile/{}", "exists": True},
         {"name": "Roblox", "url": "https://www.roblox.com/user.aspx?ID={}", "exists": False},
@@ -220,24 +322,17 @@ def main():
         {"name": "Slack", "url": "https://slack.com/{}", "exists": True},
         {"name": "Slideshare", "url": "https://www.slideshare.net/{}", "exists": True},
         {"name": "Smashcast", "url": "https://smashcast.tv/{}", "exists": True},
-        {"name": "Snapchat", "url": "https://www.snapchat.com/add/{}", "exists": True},
-        {"name": "SoundCloud", "url": "https://soundcloud.com/{}", "exists": True},
         {"name": "SourceForge", "url": "https://sourceforge.net/u/{}", "exists": True},
         {"name": "Spotify", "url": "https://open.spotify.com/user/{}", "exists": True},
         {"name": "Steam", "url": "https://steamcommunity.com/id/{}", "exists": True},
         {"name": "Strava", "url": "https://www.strava.com/athletes/{}", "exists": True},
         {"name": "Telegram", "url": "https://t.me/{}", "exists": True},
-        {"name": "TikTok", "url": "https://www.tiktok.com/@{}", "exists": True},
         {"name": "TradingView", "url": "https://www.tradingview.com/~{}", "exists": True},
         {"name": "Trakt", "url": "https://trakt.tv/users/{}", "exists": True},
         {"name": "TripAdvisor", "url": "https://www.tripadvisor.com/members/{}", "exists": True},
-        {"name": "Twitch", "url": "https://www.twitch.tv/{}", "exists": True},
-        {"name": "Twitter", "url": "https://twitter.com/{}", "exists": True},
         {"name": "Typeracer", "url": "https://data.typeracer.com/pit/profile?user={}", "exists": True},
         {"name": " ultimate-guitar", "url": "https://www.ultimate-guitar.com/u/{}", "exists": True},
         {"name": "Unsplash", "url": "https://unsplash.com/@{}", "exists": True},
-        {"name": "VK", "url": "https://vk.com/{}", "exists": True},
-        {"name": "Vimeo", "url": "https://vimeo.com/{}", "exists": True},
         {"name": "Virustotal", "url": "https://www.virustotal.com/gui/user/{}", "exists": True},
         {"name": "Wattpad", "url": "https://www.wattpad.com/user/{}", "exists": True},
         {"name": "Wix", "url": "https://{}.wix.com", "exists": True},
@@ -245,7 +340,6 @@ def main():
         {"name": "Xbox Gamertag", "url": "https://account.xbox.com/en-us/profile?gamertag={}", "exists": False},
         {"name": "Xing", "url": "https://www.xing.com/profile/{}", "exists": True},
         {"name": "YouPic", "url": "https://youpic.com/photographer/{}", "exists": True},
-        {"name": "YouTube", "url": "https://www.youtube.com/{}", "exists": True},
         {"name": "Zhihu", "url": "https://www.zhihu.com/people/{}", "exists": True},
     ]
 
